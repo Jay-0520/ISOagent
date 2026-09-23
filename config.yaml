@@ -1,0 +1,27 @@
+# Central config for the questionnaire agent.
+# Edit model names to match what you've pulled with `ollama pull`.
+
+models:
+  # Chat/generation model. Pick based on your Mac's RAM (see README sizing table).
+  chat: "qwen2.5:14b"
+  # Embedding model used for both indexing and querying the knowledge base.
+  embed: "nomic-embed-text"
+
+chroma:
+  persist_dir: "./chroma_db"
+  collection: "infosec_kb"
+
+chunking:
+  chunk_size_chars: 1200
+  chunk_overlap_chars: 150
+
+retrieval:
+  top_k: 5
+  # Below this similarity score, treat the retrieved context as too weak to trust.
+  min_score: 0.35
+
+answering:
+  # Answers with confidence below this always get flagged for manual review,
+  # regardless of what the model claims.
+  low_confidence_threshold: 0.6
+  max_answer_words: 120
