@@ -517,7 +517,7 @@ For the SaaS service: RTO ≤ 4 hours and RPO ≤ 1 hour, with bi-annual drills.
 *Sources:* Decision C16; Acadia; Servier-Q Q15, Q17; IFF-VRA 3.4; IFF-SDA 5.35
 
 ### How are backups tested?
-Backup restoration is tested quarterly using a dedicated test tenant and account, verifying data integrity and recoverability. Full disaster recovery drills are conducted bi-annually.
+Backup restoration is tested quarterly using a dedicated test tenant and account, verifying data integrity and recoverability. Full disaster recovery drills are conducted twice a year.
 
 **Supporting materials:** [ChemAIRS SaaS Environment Data Security Management Regulations](https://chemical-ai.feishu.cn/wiki/HBgBwwBPwiutYLkfn7hcbbqbnHz) – §18 Regular Assessment; [Information Security Management Policy Handbook](https://chemical-ai.feishu.cn/file/TD0tbp7HYok6XuxSEGgcEI9bnIe) – ISMS-2-CL-002 Backup
 
