@@ -1,0 +1,10 @@
+# Local environment and generated artifacts
+venv/
+__pycache__/
+chroma_db/
+test_run/
+test_run_docx/
+
+# Office lock files (created while a document is open)
+~$*
+.DS_Store

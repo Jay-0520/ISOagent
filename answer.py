@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -30,13 +31,19 @@ questionnaire on behalf of the company, using ONLY the provided context \
 (prior answers, policy excerpts). Rules:
 - If the context clearly answers the question, give a direct, factual answer \
 in the company's voice (e.g. "We encrypt data at rest using AES-256...").
-- If the context is partial, answer what you can and say what's missing.
+- If the context is partial, answer only what the context supports. Put what \
+is missing in "gaps" (a note for the internal reviewer), never in "answer".
 - If the context does not address the question at all, say exactly: \
 "NO_MATCHING_CONTEXT" as the answer, and nothing else.
 - Never invent specifics (certifications, dates, tool names, percentages) \
 that are not in the context.
 - Keep answers under {max_words} words.
-Respond ONLY as JSON: {{"answer": "...", "confidence": 0.0-1.0}}
+- Write the answer itself, ready to paste into the questionnaire. Never mention \
+"the context", the entries, or where the information came from.
+- Context entries are numbered [1], [2], ... List the numbers of the entries \
+your answer actually relies on in "used".
+Respond ONLY as JSON: {{"answer": "...", "confidence": 0.0-1.0, "used": [1, 2], "gaps": ""}}
+("gaps" is an empty string when the context fully answers the question.)
 confidence reflects how directly and completely the context supports the \
 answer, not how fluent the answer sounds.
 """
@@ -62,15 +69,60 @@ def retrieve(collection, cfg: dict, question: str):
     for doc, dist, meta in zip(docs, dists, metas):
         score = max(0.0, 1.0 - dist)
         if score >= cfg["retrieval"]["min_score"]:
-            hits.append({"text": doc, "score": score, "source": meta.get("source", "?")})
+            hits.append({
+                "text": doc,
+                "score": score,
+                "source": meta.get("source", "?"),
+                # Answer-bank chunks carry the matched question plus evidence as metadata.
+                "question": meta.get("question", ""),
+                "materials": meta.get("materials", ""),
+                "bank_sources": meta.get("bank_sources", ""),
+            })
     return hits
+
+
+def _label(hit: dict) -> str:
+    return f"{hit['source']} › {hit['question']}" if hit.get("question") else hit["source"]
+
+
+def _md_links_to_text(s: str) -> str:
+    # "[Name](https://x)" -> "Name: https://x" so links survive in Excel cells.
+    return re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r"\1: \2", s)
+
+
+def _collect(hits: list[dict], key: str) -> str:
+    seen, out = set(), []
+    for h in hits:
+        for item in (x.strip() for x in h.get(key, "").split(";")):
+            if item and item not in seen:
+                seen.add(item)
+                out.append(item)
+    return "\n".join(out)
+
+
+_REVIEWER_NOTE_RE = re.compile(
+    r"\bcontext\b|\bnot (?:specified|mentioned|provided|stated|detailed|available|covered|addressed)\b"
+    r"|\b(?:is|are) missing\b|\bno (?:information|details?) (?:on|about|regarding)\b",
+    re.I,
+)
+
+
+def _split_reviewer_notes(answer: str) -> tuple[str, str]:
+    """Safety net for the customer-facing text: move sentences that talk about
+    the retrieved context or what it lacks ("The context does not specify...")
+    out of the answer and into the reviewer note."""
+    sentences = re.split(r"(?<=[.!?])\s+", answer.strip())
+    keep = [s for s in sentences if not _REVIEWER_NOTE_RE.search(s)]
+    notes = [s for s in sentences if _REVIEWER_NOTE_RE.search(s)]
+    return " ".join(keep).strip(), " ".join(notes).strip()
 
 
 def draft_answer(cfg: dict, question: str, hits: list[dict]) -> dict:
     if not hits:
-        return {"answer": "NO_MATCHING_CONTEXT", "confidence": 0.0, "sources": []}
+        return {"answer": "NO_MATCHING_CONTEXT", "confidence": 0.0, "sources": [],
+                "materials": "", "bank_sources": "", "gaps": ""}
 
-    context = "\n\n".join(f"[{h['source']}]\n{h['text']}" for h in hits)
+    context = "\n\n".join(f"[{i}] ({_label(h)})\n{h['text']}" for i, h in enumerate(hits, 1))
     prompt = (
         f"Context:\n{context}\n\n"
         f"Question: {question}\n\n"
@@ -84,16 +136,36 @@ def draft_answer(cfg: dict, question: str, hits: list[dict]) -> dict:
             {"role": "user", "content": prompt},
         ],
         format="json",
+        options={"num_ctx": cfg["answering"].get("num_ctx", 8192)},
     )
     raw = resp["message"]["content"]
     try:
         parsed = json.loads(raw)
         answer = str(parsed.get("answer", "")).strip()
         confidence = float(parsed.get("confidence", 0.0))
+        used_ids = [int(i) for i in parsed.get("used", []) if str(i).isdigit()]
+        gaps = str(parsed.get("gaps", "") or "").strip()
     except (json.JSONDecodeError, ValueError, TypeError):
         answer, confidence = raw.strip(), 0.3  # model didn't follow JSON format; keep but distrust it
+        used_ids, gaps = [], ""
+    # Evidence comes only from the entries the model says it used (fallback: the top match).
+    used = [hits[i - 1] for i in dict.fromkeys(used_ids) if 1 <= i <= len(hits)] or hits[:1]
+    if answer == "NO_MATCHING_CONTEXT":
+        used = []  # no answer drafted, so no evidence to show
+    else:
+        answer, notes = _split_reviewer_notes(answer)
+        gaps = " ".join(x for x in (gaps, notes) if x)
+        if not answer:  # the whole draft was a note about missing information
+            answer, used = "NO_MATCHING_CONTEXT", []
 
-    return {"answer": answer, "confidence": confidence, "sources": [h["source"] for h in hits]}
+    return {
+        "answer": answer,
+        "confidence": confidence,
+        "sources": [_label(h) for h in used],
+        "materials": _md_links_to_text(_collect(used, "materials")),
+        "bank_sources": _collect(used, "bank_sources"),
+        "gaps": gaps,
+    }
 
 
 def process_questions(cfg: dict, questions: list[Question]) -> list[dict]:
@@ -115,20 +187,25 @@ def process_questions(cfg: dict, questions: list[Question]) -> list[dict]:
         if q.answer_col is not None and q.existing_answer:
             # The answer cell is already filled in the document; never overwrite it.
             results.append({**base, "answer": q.existing_answer, "confidence": None,
-                            "sources": "", "needs_review": False, "kept_existing": True})
+                            "sources": "", "materials": "", "bank_sources": "", "gaps": "",
+                            "needs_review": False, "kept_existing": True})
             continue
         hits = retrieve(collection, cfg, q.prompt_text)
         draft = draft_answer(cfg, q.prompt_text, hits)
         needs_review = (
             draft["answer"] == "NO_MATCHING_CONTEXT"
             or draft["confidence"] < cfg["answering"]["low_confidence_threshold"]
+            or bool(draft["gaps"])  # partially answered: a reviewer must fill the gap
         )
         results.append(
             {
                 **base,
                 "answer": "" if draft["answer"] == "NO_MATCHING_CONTEXT" else draft["answer"],
                 "confidence": round(draft["confidence"], 2),
-                "sources": ", ".join(draft["sources"]),
+                "sources": "\n".join(draft["sources"]),
+                "materials": draft["materials"],
+                "bank_sources": draft["bank_sources"],
+                "gaps": draft["gaps"],
                 "needs_review": needs_review,
                 "kept_existing": False,
             }
@@ -153,16 +230,19 @@ def write_xlsx_output(original: Path, results: list[dict], out_path: Path) -> No
         conf_col = next_col + 1
         review_col = next_col + 2
         src_col = next_col + 3
+        mat_col = next_col + 4
         ws.cell(row=header_row, column=answer_col, value="Draft Answer (AI)")
         ws.cell(row=header_row, column=conf_col, value="Confidence")
         ws.cell(row=header_row, column=review_col, value="Needs Review")
-        ws.cell(row=header_row, column=src_col, value="Source(s)")
+        ws.cell(row=header_row, column=src_col, value="Matched Bank Entries")
+        ws.cell(row=header_row, column=mat_col, value="Supporting Materials")
 
         for r in rows:
             ws.cell(row=r["row"], column=answer_col, value=r["answer"])
             ws.cell(row=r["row"], column=conf_col, value=r["confidence"])
             ws.cell(row=r["row"], column=review_col, value="YES" if r["needs_review"] else "")
             ws.cell(row=r["row"], column=src_col, value=r["sources"])
+            ws.cell(row=r["row"], column=mat_col, value=r["materials"])
 
     wb.save(out_path)
 
@@ -246,7 +326,10 @@ def write_review_sheet(results: list[dict], out_path: Path) -> None:
             "Draft Answer (AI)": r["answer"],
             "Confidence": r["confidence"],
             "Needs Review": "YES" if r["needs_review"] else "",
-            "Source(s)": r["sources"],
+            "Reviewer Note (gaps)": r.get("gaps", ""),
+            "Matched Bank Entries": r["sources"],
+            "Supporting Materials": r["materials"],
+            "Bank Sources (internal)": r["bank_sources"],
             "Placement": status,
         })
     pd.DataFrame(rows).to_excel(out_path, index=False)

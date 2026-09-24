@@ -112,6 +112,48 @@ def chunk_text(text: str, chunk_size_chars: int, overlap_chars: int) -> Iterator
         start = max(end - overlap_chars, start + 1)
 
 
+_MATERIALS_RE = re.compile(r"^\*\*Supporting materials:\*\*\s*(.*)$", re.M)
+_SOURCES_RE = re.compile(r"^\*Sources:\*\s*(.*)$", re.M)
+
+
+def answer_bank_entries(text: str) -> list[dict]:
+    """Split an answer bank (## sections, ### question entries) into one record
+    per question. The chunk text the model sees is the question plus answer only;
+    'Supporting materials' and 'Sources' lines are returned separately so they
+    travel as metadata (for the review sheet) and can't leak into drafted answers.
+    Returns [] for markdown that isn't shaped like an answer bank."""
+    if not re.search(r"^### ", text, re.M) or not _SOURCES_RE.search(text):
+        return []
+    entries = []
+    section = ""
+    for block in re.split(r"(?m)^(?=## |### )", text):
+        if block.startswith("## "):
+            section = re.sub(r"^\d+\.\s*", "", block.splitlines()[0][3:]).strip()
+            continue
+        if not block.startswith("### "):
+            continue  # preamble: instructions for editors, not answers
+        lines = block.splitlines()
+        question = lines[0][4:].strip()
+        body = "\n".join(lines[1:])
+        m_mat, m_src = _MATERIALS_RE.search(body), _SOURCES_RE.search(body)
+        cut = min(m.start() for m in (m_mat, m_src) if m) if (m_mat or m_src) else len(body)
+        answer = re.sub(r"\n---\s*$", "", body[:cut]).strip()
+        if not answer:
+            continue
+        materials = m_mat.group(1).strip() if m_mat else ""
+        if materials.startswith("none in the Supporting Materials"):
+            materials = ""
+        entries.append({
+            "question": question,
+            "section": section,
+            "answer": answer,
+            "text": f"{section}\nQ: {question}\nA: {answer}",
+            "materials": materials,
+            "bank_sources": m_src.group(1).strip() if m_src else "",
+        })
+    return entries
+
+
 def iter_knowledge_base_files(kb_dir: Path) -> Iterator[Path]:
     exts = {".txt", ".md", ".docx", ".pdf", ".xlsx"}
     for path in sorted(kb_dir.rglob("*")):

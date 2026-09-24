@@ -63,7 +63,8 @@ python answer.py path/to/incoming_questionnaire.xlsx
 
 python answer.py path/to/incoming_questionnaire.docx
 # -> output/incoming_questionnaire.answered.docx  (answers in the form's own answer cells)
-#    output/incoming_questionnaire.review.xlsx    (question / answer / confidence / sources per row)
+#    output/incoming_questionnaire.review.xlsx    (question / answer / confidence / matched bank entries /
+#                                                  supporting materials / bank sources per row)
 
 # To sanity-check what got extracted before running the full pipeline on a
 # new questionnaire template:
@@ -72,15 +73,31 @@ python parse_questionnaire.py path/to/incoming_questionnaire.xlsx
 
 ## Building the knowledge base
 
-Drop files into `knowledge_base/` (subfolders are fine):
-- Past answered questionnaires, exported to .docx/.xlsx/.txt
-- Security policy documents, SOC 2 report excerpts, pen test summaries
-- Any internal doc that states things like your encryption standards,
-  access control model, incident response process, subprocessor list, etc.
+`knowledge_base/answer_bank.md` is the single source of truth: one reviewed
+answer per question, grouped in `## N. Section` headings, each entry shaped as
 
-The more specific and current these are, the better the drafts. Stale docs
-produce stale (wrong) answers with false confidence, so prune old versions
-out when policies change.
+```
+### How is data encrypted in transit?
+<answer>
+
+**Supporting materials:** [Doc name](link); Screenshot section (screenshots)
+
+*Sources:* where the answer came from (internal)
+```
+
+`ingest.py` indexes each `###` entry as one chunk. The model only sees the
+question and answer; the Supporting materials and Sources lines are stored
+as metadata and show up in the review sheet, never in drafted answers.
+
+Past questionnaires and raw source documents live in `archive/` and are
+**not** indexed, so old or conflicting wording can't leak into drafts. When a
+new questionnaire is completed, fold any new or changed answers into the
+bank (see `answer_bank_OPEN_DECISIONS.md` for how conflicts were handled),
+then re-run `python ingest.py ./knowledge_base`. Chunks from files removed
+from `knowledge_base/` are dropped automatically on the next ingest.
+
+Other formats (.txt/.md/.docx/.pdf/.xlsx) placed in `knowledge_base/` still
+work; they're split into ~1200-character chunks.
 
 ## Known limitations
 
@@ -97,8 +114,10 @@ out when policies change.
   such a table (free paragraphs, label/value tables like "Supplier name:")
   are listed as "NOT PLACED" in `output/<name>.review.xlsx` for manual copy.
 - **No answer here is authoritative.** Confidence scores are the model's
-  self-assessment, not a certification of correctness — always read the
-  source chunks it cited before approving an answer.
+  self-assessment, not a certification of correctness. The model can still
+  stretch a bank answer to fit a sharper question (e.g. "built-in MFA exists"
+  drafted as "MFA is enforced for admin accounts"), so always compare the
+  draft with the matched bank entries in the review sheet before approving.
 
 ## Extending it
 

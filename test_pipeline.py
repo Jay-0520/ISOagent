@@ -136,7 +136,39 @@ def test_docx_writeback():
     print("[docx write] shifted position aborted the write")
 
 
+def test_answer_bank_entries():
+    """Answer bank: one record per ### question; evidence lines kept out of the text."""
+    from loaders import answer_bank_entries
+
+    bank = (
+        "# Bank\n\nEditor notes that must not be indexed.\n\n---\n\n"
+        "## 1. Encryption\n\n"
+        "### How is data encrypted in transit?\nHTTPS with TLS 1.2 and TLS 1.3.\n\n"
+        "**Supporting materials:** [Cert](https://x/cert); Screens (screenshots)\n\n"
+        "*Sources:* NOVA 3.1; Decision C8\n\n"
+        "### Have you had a breach?\nNo.\n\n"
+        "**Supporting materials:** none in the Supporting Materials document\n\n"
+        "*Sources:* IFF-VRA 8.7\n\n---\n\n"
+        "## 2. People\n\n"
+        "### Is training required?\n- On hire\n- Twice per year\n\n*Sources:* IFF-VRA 4.4\n"
+    )
+    e = answer_bank_entries(bank)
+    assert [x["question"] for x in e] == ["How is data encrypted in transit?", "Have you had a breach?", "Is training required?"]
+    assert e[0]["section"] == "Encryption" and e[2]["section"] == "People"
+    assert e[0]["answer"] == "HTTPS with TLS 1.2 and TLS 1.3."
+    assert e[0]["materials"] == "[Cert](https://x/cert); Screens (screenshots)"
+    assert e[0]["bank_sources"] == "NOVA 3.1; Decision C8"
+    assert e[1]["materials"] == ""  # "none in the Supporting Materials document" -> empty
+    assert e[2]["answer"] == "- On hire\n- Twice per year"
+    for x in e:
+        assert "Sources" not in x["text"] and "Supporting materials" not in x["text"]
+        assert "Editor notes" not in x["text"]
+    assert answer_bank_entries("# Plain notes\n\nNo question entries here.") == []
+    print("[answer bank] 3 entries split; evidence kept out of chunk text")
+
+
 def main():
+    test_answer_bank_entries()
     test_docx_writeback()
 
     import chromadb

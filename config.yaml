@@ -16,7 +16,9 @@ chunking:
   chunk_overlap_chars: 150
 
 retrieval:
-  top_k: 5
+  # Answer-bank entries are short (~90 tokens), so pass a generous candidate set;
+  # the model reports which entries it used, and only those feed the evidence columns.
+  top_k: 12
   # Below this similarity score, treat the retrieved context as too weak to trust.
   min_score: 0.35
 
@@ -25,3 +27,6 @@ answering:
   # regardless of what the model claims.
   low_confidence_threshold: 0.6
   max_answer_words: 120
+  # Ollama's default context window can be as small as 2048 tokens and silently
+  # truncates longer prompts; set it explicitly.
+  num_ctx: 8192

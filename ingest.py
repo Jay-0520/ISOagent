@@ -1,7 +1,12 @@
 """Index knowledge base documents (past questionnaire answers, policies, SOC 2
 excerpts, etc.) into a local ChromaDB collection using a local Ollama embedding
 model. Re-running this is safe: chunks are keyed by file path + chunk index, so
-re-ingesting a changed file replaces its old chunks.
+re-ingesting a changed file replaces its old chunks, and chunks from files that are
+no longer in the directory are removed.
+
+An answer bank (markdown with ### question entries and *Sources:* lines) is indexed
+one question per chunk; its Supporting materials / Sources lines are stored as
+metadata rather than in the text the model sees.
 
 Usage:
     python ingest.py ./knowledge_base
@@ -17,7 +22,7 @@ import ollama
 import yaml
 from tqdm import tqdm
 
-from loaders import chunk_text, iter_knowledge_base_files
+from loaders import answer_bank_entries, chunk_text, iter_knowledge_base_files
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -64,27 +69,49 @@ def main() -> int:
             print(f"  skipped {path.name}: {e}", file=sys.stderr)
             continue
 
-        chunks = list(
-            chunk_text(
-                text,
-                cfg["chunking"]["chunk_size_chars"],
-                cfg["chunking"]["chunk_overlap_chars"],
+        rel = str(path.relative_to(kb_dir))
+        # Answer banks are indexed one question per chunk, with supporting
+        # materials / sources as metadata; everything else is split by size.
+        entries = answer_bank_entries(text) if path.suffix.lower() == ".md" else []
+        if entries:
+            chunks = [e["text"] for e in entries]
+            metadatas = [
+                {"source": rel, "chunk": i, "question": e["question"], "section": e["section"],
+                 "materials": e["materials"], "bank_sources": e["bank_sources"]}
+                for i, e in enumerate(entries)
+            ]
+        else:
+            chunks = list(
+                chunk_text(
+                    text,
+                    cfg["chunking"]["chunk_size_chars"],
+                    cfg["chunking"]["chunk_overlap_chars"],
+                )
             )
-        )
+            metadatas = [{"source": rel, "chunk": i} for i in range(len(chunks))]
         if not chunks:
             continue
 
         # Remove any previously indexed chunks for this file before re-adding.
-        rel = str(path.relative_to(kb_dir))
         existing = collection.get(where={"source": rel})
         if existing["ids"]:
             collection.delete(ids=existing["ids"])
 
         ids = [f"{rel}::{i}" for i in range(len(chunks))]
-        metadatas = [{"source": rel, "chunk": i} for i in range(len(chunks))]
         vectors = embed(cfg["models"]["embed"], chunks)
         collection.add(ids=ids, embeddings=vectors, documents=chunks, metadatas=metadatas)
         total_chunks += len(chunks)
+
+    # Drop chunks from files that are no longer in the knowledge base (moved or deleted).
+    current = {str(p.relative_to(kb_dir)) for p in files}
+    stale = collection.get(include=["metadatas"])
+    stale_ids = [i for i, m in zip(stale["ids"], stale["metadatas"]) if m.get("source") not in current]
+    if stale_ids:
+        collection.delete(ids=stale_ids)
+        gone = sorted({m["source"] for m in stale["metadatas"] if m.get("source") not in current})
+        print(f"Removed {len(stale_ids)} stale chunks from {len(gone)} files no longer in {kb_dir}:")
+        for g in gone:
+            print(f"  - {g}")
 
     print(f"Indexed {total_chunks} chunks from {len(files)} files into "
           f"'{cfg['chroma']['collection']}' at {cfg['chroma']['persist_dir']}")
