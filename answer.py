@@ -137,6 +137,8 @@ def draft_answer(cfg: dict, question: str, hits: list[dict]) -> dict:
         ],
         format="json",
         options={"num_ctx": cfg["answering"].get("num_ctx", 8192)},
+        # Only sent when configured: models without a thinking mode may reject it.
+        **({"think": cfg["models"]["chat_think"]} if "chat_think" in cfg["models"] else {}),
     )
     raw = resp["message"]["content"]
     try:

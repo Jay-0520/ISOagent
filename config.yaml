@@ -3,7 +3,11 @@
 
 models:
   # Chat/generation model. Pick based on your Mac's RAM (see README sizing table).
-  chat: "qwen2.5:14b"
+  chat: "qwen3.5:9b"
+  # Qwen 3.5 is a thinking model: true = reason step by step before answering
+  # (slower), false = answer directly. Delete this line for models without a
+  # thinking mode (e.g. qwen2.5:14b); Ollama may reject it there.
+  chat_think: false
   # Embedding model used for both indexing and querying the knowledge base.
   embed: "nomic-embed-text"
 

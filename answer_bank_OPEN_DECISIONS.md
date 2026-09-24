@@ -1,6 +1,6 @@
 # Answer Bank – Conflicts for Manual Review
 
-Conflicts already integrated into `knowledge_base/answer_bank.md` have been removed from this file (removed 2026-09-23: C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C14, C15, C16, C17, C18, C19, C20, C22, C23, C24, C25, C26, C27, C28, C29, C30, C31, C32, C34, C35).
+Conflicts already integrated into `knowledge_base/answer_bank.md` have been removed from this file (removed 2026-09-23: C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C14, C15, C16, C17, C18, C19, C20, C22, C23, C24, C25, C26, C27, C28, C29, C30, C31, C32, C34, C35; removed 2026-09-24: C36).
 
 Every place where the knowledge-base documents disagree. For each conflict, the
 contested claim has been **removed** from `knowledge_base/answer_bank.md`. Until
@@ -48,6 +48,7 @@ Source abbreviations and dates (where the document states one):
 - Servier-email: "no SaaS data is stored outside the U.S."
 - SuppMat, SaaS Regulations §7–9: "Dual-layer protection: local backup + remote disaster recovery"; local: "7-day retention, AES-256 encryption, automatic cleanup"; remote: "3-month retention, TLS 1.2 + AES-256, physical destruction after 3 months"
 - SuppMat, ISMS-2-CL-002 Backup Policy: "Off-site backup storage requirements", "Annual review of off-site storage providers"
+- ESTEVE questionnaire (2026-09), DPC access answer: "All data is stored in the US, in AWS data centres." (sentence left out of the merged bank until C13 is decided)
 
 *Note:* no source says where the remote DR backup is (another AWS region? the IDC?) or what "physical destruction" applies to. If the DR copy sits outside the US, it conflicts with the US-only storage claim.
 *Removed from bank:* the backup entry and the "No SaaS data is stored outside the U.S." sentence.
@@ -55,7 +56,9 @@ Source abbreviations and dates (where the document states one):
 **Decision:**
 mark unknown for now.
 
-**Status:** ⏳ Still open (marked unknown). Nothing added to the bank.
+Updated 2026-09-24: all data, including backups, is stored in the US, in AWS data centres.
+
+**Status:** ✅ Location integrated into answer_bank.md (2026-09-24). Not decided: what "physical destruction" of DR backups means (the bank says backups are overwritten).
 
 ---
 
