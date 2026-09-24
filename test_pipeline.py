@@ -9,6 +9,7 @@ same code path runs unchanged.
 """
 import hashlib
 import json
+import yaml
 import re
 import shutil
 from pathlib import Path
@@ -167,8 +168,69 @@ def test_answer_bank_entries():
     print("[answer bank] 3 entries split; evidence kept out of chunk text")
 
 
+def test_tiered_answering():
+    """bank -> reservoir -> model-only fallback, with source-weighted confidence.
+    Offline: embeddings and chat are faked, no model is called."""
+    import chromadb
+    import answer as answer_mod
+    from parse_questionnaire import Question
+
+    def fake_chat(model, messages, format=None, options=None, **kw):
+        system, user = messages[0]["content"], messages[-1]["content"]
+        context, question = user.split("Question:")[0], user.split("Question:")[1]
+        if "There is NO reviewed answer" in system:           # tier 3
+            ans = {"answer": "We use [CONFIRM: tool name] for this.", "confidence": 0.8, "used": [], "gaps": "tool name"}
+        elif "BANKFACT" in context and "encryption" in question:      # tier 1 context answers it
+            ans = {"answer": "Bank answer.", "confidence": 0.9, "used": [1], "gaps": ""}
+        elif "RESERVOIRFACT" in context and "ransomware" in question:    # tier 2 context answers it
+            ans = {"answer": "Reservoir answer.", "confidence": 0.9, "used": [1], "gaps": ""}
+        else:
+            ans = {"answer": "NO_MATCHING_CONTEXT", "confidence": 0.0}
+        return {"message": {"content": json.dumps(ans)}}
+
+    client = chromadb.EphemeralClient()
+    for name in ("t_bank", "t_reservoir"):
+        try:
+            client.delete_collection(name)
+        except Exception:
+            pass
+    bank = client.create_collection("t_bank", metadata={"hnsw:space": "cosine"})
+    reservoir = client.create_collection("t_reservoir", metadata={"hnsw:space": "cosine"})
+    bank.add(ids=["b1"], documents=["Q: encryption at rest\nA: BANKFACT AES"],
+             embeddings=[fake_embed_text("encryption at rest")],
+             metadatas=[{"source": "answer_bank.md", "question": "encryption at rest", "materials": "", "bank_sources": "X"}])
+    reservoir.add(ids=["k1"], documents=["Q: ransomware recovery"],
+               embeddings=[fake_embed_text("ransomware recovery")],
+               metadatas=[{"source": "answer_bank_reservoir.md", "question": "ransomware recovery",
+                           "answers": "[PTC] RESERVOIRFACT immutable backups", "customers": "PTC", "bank_sources": "ptc.docx"}])
+
+    cfg = yaml.safe_load(open("config.yaml"))
+    cfg["retrieval"]["min_score"] = 0.0
+    qs = [Question(id=str(i), sheet="t", row=i, text=t, answer_col=2)
+          for i, t in enumerate(["encryption at rest", "ransomware recovery", "quantum key distribution"], 1)]
+
+    class FakeClient:
+        def __init__(self, path): pass
+        def get_or_create_collection(self, name, metadata=None): return bank
+        def get_collection(self, name): return reservoir
+
+    with mock.patch("ollama.embeddings", side_effect=fake_ollama_embeddings), \
+         mock.patch("ollama.chat", side_effect=fake_chat), \
+         mock.patch.object(answer_mod.chromadb, "PersistentClient", FakeClient):
+        r = answer_mod.process_questions(cfg, qs)
+
+    w = cfg["answering"]["source_weights"]
+    assert [x["tier"] for x in r] == ["Answer bank", "Reservoir (archive, unreviewed)", "Model only (unverified)"], [x["tier"] for x in r]
+    assert r[0]["confidence"] == round(0.9 * w["bank"], 2) and not r[0]["needs_review"]
+    assert r[1]["confidence"] == round(0.9 * w["reservoir"], 2) and r[1]["needs_review"]   # unreviewed source
+    assert r[2]["confidence"] == round(0.8 * w["llm"], 2) and r[2]["needs_review"]
+    assert "[CONFIRM:" in r[2]["answer"] and r[2]["gaps"]
+    print("[tiers] bank -> reservoir -> model-only fallback; confidence weighted by source")
+
+
 def main():
     test_answer_bank_entries()
+    test_tiered_answering()
     test_docx_writeback()
 
     import chromadb

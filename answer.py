@@ -49,6 +49,30 @@ answer, not how fluent the answer sounds.
 """
 
 
+RESERVOIR_NOTE = """The numbered context below is PAST answers Chemical.AI gave to other \
+customers (unreviewed; may be outdated, and may disagree with each other). If they \
+disagree on a fact, do not pick one: answer only what they agree on and describe \
+the disagreement in "gaps".
+"""
+
+LLM_PROMPT = """You are drafting an answer to a vendor information security \
+questionnaire question on behalf of Chemical.AI (product: ChemAIRS). There is NO \
+reviewed answer for this question. The numbered background entries are reviewed \
+facts about the company; use them where relevant. Rules:
+- Never invent company-specific facts (certifications, dates, names, numbers, \
+tools, frequencies, locations). Where the answer needs such a fact that the \
+background does not give, write a placeholder like [CONFIRM: backup frequency].
+- Keep answers under {max_words} words, in the company's voice, ready to paste. \
+Never mention the background, the entries, or where information came from.
+- List every placeholder or unsupported claim in "gaps".
+- In "used", list the background entries you relied on (may be empty).
+Respond ONLY as JSON: {{"answer": "...", "confidence": 0.0-1.0, "used": [1, 2], "gaps": ""}}
+confidence reflects how much of the answer is supported by the background.
+"""
+
+TIER_LABEL = {"bank": "Answer bank", "reservoir": "Reservoir (archive, unreviewed)", "llm": "Model only (unverified)"}
+
+
 def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
@@ -77,6 +101,8 @@ def retrieve(collection, cfg: dict, question: str):
                 "question": meta.get("question", ""),
                 "materials": meta.get("materials", ""),
                 "bank_sources": meta.get("bank_sources", ""),
+                "answers": meta.get("answers", ""),        # reservoir entries: past answers by customer
+                "customers": meta.get("customers", ""),
             })
     return hits
 
@@ -117,18 +143,28 @@ def _split_reviewer_notes(answer: str) -> tuple[str, str]:
     return " ".join(keep).strip(), " ".join(notes).strip()
 
 
-def draft_answer(cfg: dict, question: str, hits: list[dict]) -> dict:
-    if not hits:
+def draft_answer(cfg: dict, question: str, hits: list[dict], tier: str = "bank") -> dict:
+    """tier: "bank" (reviewed entries), "reservoir" (past answers from the archive) or
+    "llm" (model alone, with bank entries as background only)."""
+    if not hits and tier != "llm":
         return {"answer": "NO_MATCHING_CONTEXT", "confidence": 0.0, "sources": [],
                 "materials": "", "bank_sources": "", "gaps": ""}
 
-    context = "\n\n".join(f"[{i}] ({_label(h)})\n{h['text']}" for i, h in enumerate(hits, 1))
+    def entry_text(h):
+        if tier == "reservoir":
+            return f"Q: {h['question']}\nPast answers:\n{h['answers']}"
+        return h["text"]
+    context = "\n\n".join(f"[{i}] ({_label(h)})\n{entry_text(h)}" for i, h in enumerate(hits, 1)) or "(none)"
     prompt = (
         f"Context:\n{context}\n\n"
         f"Question: {question}\n\n"
         "Respond with the JSON object only."
     )
-    system = SYSTEM_PROMPT.format(max_words=cfg["answering"]["max_answer_words"])
+    words = cfg["answering"]["max_answer_words"]
+    if tier == "llm":
+        system = LLM_PROMPT.format(max_words=words)
+    else:
+        system = SYSTEM_PROMPT.format(max_words=words) + (RESERVOIR_NOTE if tier == "reservoir" else "")
     resp = ollama.chat(
         model=cfg["models"]["chat"],
         messages=[
@@ -151,7 +187,7 @@ def draft_answer(cfg: dict, question: str, hits: list[dict]) -> dict:
         answer, confidence = raw.strip(), 0.3  # model didn't follow JSON format; keep but distrust it
         used_ids, gaps = [], ""
     # Evidence comes only from the entries the model says it used (fallback: the top match).
-    used = [hits[i - 1] for i in dict.fromkeys(used_ids) if 1 <= i <= len(hits)] or hits[:1]
+    used = [hits[i - 1] for i in dict.fromkeys(used_ids) if 1 <= i <= len(hits)] or (hits[:1] if tier != "llm" else [])
     if answer == "NO_MATCHING_CONTEXT":
         used = []  # no answer drafted, so no evidence to show
     else:
@@ -170,11 +206,22 @@ def draft_answer(cfg: dict, question: str, hits: list[dict]) -> dict:
     }
 
 
+def _open_collection(client, name: str):
+    try:
+        return client.get_collection(name)
+    except Exception:
+        return None
+
+
 def process_questions(cfg: dict, questions: list[Question]) -> list[dict]:
     client = chromadb.PersistentClient(path=cfg["chroma"]["persist_dir"])
-    collection = client.get_or_create_collection(
-        cfg["chroma"]["collection"], metadata={"hnsw:space": "cosine"}
-    )
+    bank = client.get_or_create_collection(cfg["chroma"]["collection"], metadata={"hnsw:space": "cosine"})
+    reservoir = _open_collection(client, cfg["chroma"].get("reservoir_collection", "infosec_reservoir"))
+    if reservoir is None:
+        print("NOTE: no reservoir index found (run build_reservoir.py); tier 2 is skipped.")
+    weights = cfg["answering"].get("source_weights", {"bank": 1.0, "reservoir": 0.6, "llm": 0.3})
+    llm_fallback = cfg["answering"].get("llm_fallback", True)
+    reservoir_cfg = {**cfg, "retrieval": {**cfg["retrieval"], "top_k": cfg["retrieval"].get("reservoir_top_k", 6)}}
 
     results = []
     for q in tqdm(questions, desc="Drafting answers"):
@@ -188,22 +235,36 @@ def process_questions(cfg: dict, questions: list[Question]) -> list[dict]:
         }
         if q.answer_col is not None and q.existing_answer:
             # The answer cell is already filled in the document; never overwrite it.
-            results.append({**base, "answer": q.existing_answer, "confidence": None,
-                            "sources": "", "materials": "", "bank_sources": "", "gaps": "",
+            results.append({**base, "answer": q.existing_answer, "confidence": None, "model_confidence": None,
+                            "tier": "", "sources": "", "materials": "", "bank_sources": "", "gaps": "",
                             "needs_review": False, "kept_existing": True})
             continue
-        hits = retrieve(collection, cfg, q.prompt_text)
-        draft = draft_answer(cfg, q.prompt_text, hits)
+
+        # 1. reviewed answer bank -> 2. reservoir of past answers -> 3. model alone
+        bank_hits = retrieve(bank, cfg, q.prompt_text)
+        tier, draft = "bank", draft_answer(cfg, q.prompt_text, bank_hits, "bank")
+        if draft["answer"] == "NO_MATCHING_CONTEXT" and reservoir is not None and reservoir.count():
+            reservoir_hits = retrieve(reservoir, reservoir_cfg, q.prompt_text)
+            tier, draft = "reservoir", draft_answer(cfg, q.prompt_text, reservoir_hits, "reservoir")
+        if draft["answer"] == "NO_MATCHING_CONTEXT" and llm_fallback:
+            background = bank_hits[: cfg["retrieval"].get("reservoir_top_k", 6)]
+            tier, draft = "llm", draft_answer(cfg, q.prompt_text, background, "llm")
+
+        answered = draft["answer"] != "NO_MATCHING_CONTEXT"
+        final = round(draft["confidence"] * weights.get(tier, 0.0), 2) if answered else 0.0
         needs_review = (
-            draft["answer"] == "NO_MATCHING_CONTEXT"
-            or draft["confidence"] < cfg["answering"]["low_confidence_threshold"]
-            or bool(draft["gaps"])  # partially answered: a reviewer must fill the gap
+            not answered
+            or tier != "bank"                          # unreviewed source: always check
+            or final < cfg["answering"]["low_confidence_threshold"]
+            or bool(draft["gaps"])                     # partially answered: a reviewer must fill the gap
         )
         results.append(
             {
                 **base,
-                "answer": "" if draft["answer"] == "NO_MATCHING_CONTEXT" else draft["answer"],
-                "confidence": round(draft["confidence"], 2),
+                "answer": draft["answer"] if answered else "",
+                "tier": TIER_LABEL[tier] if answered else "",
+                "model_confidence": round(draft["confidence"], 2) if answered else 0.0,
+                "confidence": final,
                 "sources": "\n".join(draft["sources"]),
                 "materials": draft["materials"],
                 "bank_sources": draft["bank_sources"],
@@ -233,11 +294,13 @@ def write_xlsx_output(original: Path, results: list[dict], out_path: Path) -> No
         review_col = next_col + 2
         src_col = next_col + 3
         mat_col = next_col + 4
+        tier_col = next_col + 5
         ws.cell(row=header_row, column=answer_col, value="Draft Answer (AI)")
         ws.cell(row=header_row, column=conf_col, value="Confidence")
         ws.cell(row=header_row, column=review_col, value="Needs Review")
         ws.cell(row=header_row, column=src_col, value="Matched Bank Entries")
         ws.cell(row=header_row, column=mat_col, value="Supporting Materials")
+        ws.cell(row=header_row, column=tier_col, value="Answer Source")
 
         for r in rows:
             ws.cell(row=r["row"], column=answer_col, value=r["answer"])
@@ -245,11 +308,16 @@ def write_xlsx_output(original: Path, results: list[dict], out_path: Path) -> No
             ws.cell(row=r["row"], column=review_col, value="YES" if r["needs_review"] else "")
             ws.cell(row=r["row"], column=src_col, value=r["sources"])
             ws.cell(row=r["row"], column=mat_col, value=r["materials"])
+            ws.cell(row=r["row"], column=tier_col, value=r.get("tier", ""))
 
     wb.save(out_path)
 
 
-REVIEW_FILL = "FFF2CC"  # light yellow cell shading = "AI draft, needs review"
+REVIEW_FILL = "FFF2CC"  # yellow: from the answer bank, but needs review (low confidence / gaps / blank)
+TIER_FILL = {
+    TIER_LABEL["reservoir"]: "DDEBF7",  # blue: from past archive answers (unreviewed)
+    TIER_LABEL["llm"]: "FCE4D6",     # orange: model only, unverified - check every fact
+}
 
 
 def _shade_cell(cell, fill: str) -> None:
@@ -304,7 +372,7 @@ def write_docx_output(original: Path, results: list[dict], out_path: Path) -> No
         if r["answer"]:
             _write_text(cell.paragraphs[0], r["answer"])
         if r["needs_review"]:
-            _shade_cell(cell, REVIEW_FILL)
+            _shade_cell(cell, TIER_FILL.get(r.get("tier", ""), REVIEW_FILL))
 
     doc.save(str(out_path))
 
@@ -326,7 +394,9 @@ def write_review_sheet(results: list[dict], out_path: Path) -> None:
             "Section": r["section"],
             "Question": r["question"],
             "Draft Answer (AI)": r["answer"],
+            "Answer Source": r.get("tier", ""),
             "Confidence": r["confidence"],
+            "Model Confidence": r.get("model_confidence"),
             "Needs Review": "YES" if r["needs_review"] else "",
             "Reviewer Note (gaps)": r.get("gaps", ""),
             "Matched Bank Entries": r["sources"],
@@ -364,6 +434,9 @@ def main() -> int:
 
     flagged = sum(1 for r in results if r["needs_review"])
     kept = sum(1 for r in results if r["kept_existing"])
+    by_tier = {label: sum(1 for r in results if r.get("tier") == label) for label in TIER_LABEL.values()}
+    print("Answer sources: " + ", ".join(f"{k}: {v}" for k, v in by_tier.items())
+          + f", unanswered: {sum(1 for r in results if not r['kept_existing'] and not r['answer'])}")
     print(f"Done. {len(results) - flagged - kept} drafted with reasonable confidence, "
           f"{flagged} flagged for manual review, {kept} already answered (left as is).")
 
@@ -377,7 +450,8 @@ def main() -> int:
         review_path = out_dir / f"{path.stem}.review.xlsx"
         write_review_sheet(results, review_path)
         unplaced = sum(1 for r in results if r["answer_col"] is None)
-        print(f"Wrote: {out_path}  (yellow cells = needs review)")
+        print(f"Wrote: {out_path}  (needs review: yellow = answer bank, blue = past archive answer, "
+              f"orange = model only)")
         print(f"Wrote: {review_path}  (question/answer/confidence/sources side by side)")
         if unplaced:
             print(f"NOTE: {unplaced} questions had no answer cell in the document; "

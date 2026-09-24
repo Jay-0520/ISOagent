@@ -1,0 +1,30 @@
+# Which customer each archive file belongs to, for build_reservoir.py.
+# Importance = number of DISTINCT customers asking a question, so copies and
+# follow-ups of the same customer's questionnaire must share one customer name.
+#   customer: name used for counting (files with the same name count once)
+#   include:  false = not a questionnaire, or a duplicate/merge of other files
+#   answers:  false = count its questions, but never reuse its answers (e.g. an
+#             answer.py output that wasn't reviewed before it was sent)
+# Files missing from this list are counted as their own customer (file name),
+# and build_reservoir.py prints a reminder to tag them here.
+
+"NOVA Cloud Security Risk Assessment Template.pdf": {customer: NOVA Chemicals}
+"FMC - Security Risk Assessment.pdf": {customer: FMC}
+"Information_security_questionnaire.pdf": {include: false}   # internal merge of NOVA + Merck answers
+"Merck Chemical.ai evaluation filled.pdf": {customer: Merck}
+"Grunenthal_information_security_check.pdf": {include: false}  # older copy of Information_Security_Questions_Summary.md
+"Information_Security_Questions_Summary.md": {customer: Grunenthal}
+"Cybersecurity Questions.jay.acadia.docx": {customer: Acadia}
+"Jazz_questionnaires.md": {customer: Jazz}
+"Chemical.AI PIA.xlsx": {customer: Gilead}
+"Answers to Gilead Email Questions.md": {customer: Gilead}
+"Gilead_follow_up_email_question.md": {customer: Gilead}
+"Servier_information_security_questionnaire (SaaS).md": {customer: Servier}
+"Answers_to_Email_Questions_Servier.md": {customer: Servier}
+"_Evaluation Risk-Data Privacy Questionnaire.md": {customer: Servier}
+"Vendor Risk Assessment (VRA).jay.iff.docx": {customer: IFF}
+"Solutions Design Assessment (SDA).jay.iff.docx": {customer: IFF}
+"Esteve.md": {customer: ESTEVE}
+"Filled_Vendor Supplier Questionnaire for Computer - Automated Systems.jay.ptc.docx": {customer: PTC}
+"Selection and qualification of cloud service providers questionnaire.jay.siegfried.xlsx": {customer: Siegfried}
+"Information_Security_Question_Supporting_Materials.md": {include: false}  # evidence summaries, not questions

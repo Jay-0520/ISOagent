@@ -2,11 +2,10 @@
 # Edit model names to match what you've pulled with `ollama pull`.
 
 models:
-  # Chat/generation model. Pick based on your Mac's RAM (see README sizing table).
+  # Chat/generation model (see README > Models).
   chat: "qwen3.5:9b"
   # Qwen 3.5 is a thinking model: true = reason step by step before answering
-  # (slower), false = answer directly. Delete this line for models without a
-  # thinking mode (e.g. qwen2.5:14b); Ollama may reject it there.
+  # (slower), false = answer directly.
   chat_think: false
   # Embedding model used for both indexing and querying the knowledge base.
   embed: "nomic-embed-text"
@@ -14,6 +13,8 @@ models:
 chroma:
   persist_dir: "./chroma_db"
   collection: "infosec_kb"
+  # Reservoir of archive questions + past answers, built by build_reservoir.py (tier 2).
+  reservoir_collection: "infosec_reservoir"
 
 chunking:
   chunk_size_chars: 1200
@@ -25,6 +26,8 @@ retrieval:
   top_k: 12
   # Below this similarity score, treat the retrieved context as too weak to trust.
   min_score: 0.35
+  # Candidates taken from the reservoir (tier 2).
+  reservoir_top_k: 6
 
 answering:
   # Answers with confidence below this always get flagged for manual review,
@@ -34,3 +37,15 @@ answering:
   # Ollama's default context window can be as small as 2048 tokens and silently
   # truncates longer prompts; set it explicitly.
   num_ctx: 8192
+  # Where each answer comes from, tried in order:
+  #   1. bank    - knowledge_base/answer_bank.md (reviewed)
+  #   2. reservoir - past answers in answer_bank_reservoir.md (unreviewed, from archive/)
+  #   3. llm     - the model alone, with bank entries as background (unverified)
+  # Final confidence = model confidence x source weight. Anything not from the
+  # bank is always flagged for review.
+  source_weights:
+    bank: 1.0
+    reservoir: 0.6
+    llm: 0.3
+  # false = stop after tier 2 and leave unanswered questions blank.
+  llm_fallback: true
