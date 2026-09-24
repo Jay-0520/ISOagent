@@ -8,3 +8,4 @@ test_run_docx/
 # Office lock files (created while a document is open)
 ~$*
 .DS_Store
+.DS_Store
