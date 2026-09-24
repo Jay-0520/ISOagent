@@ -20,11 +20,43 @@ Each entry ends with two lines:
 
 Deployment models: answers describe the Chemical.AI-hosted SaaS unless stated.
 For local (on-premise or customer-cloud) deployment, the customer hosts and
-controls the environment and data; see section 17.
+controls the environment and data; see section 18.
 
 ---
 
-## 1. Certifications and assurance
+## 1. Supplier and product information
+
+### What is the supplier name?
+Chemical.AI
+
+**Supporting materials:** none in the Supporting Materials document
+
+*Sources:* Questionnaire cover page, provided by user 2026-09-24
+
+### What is the product / software name?
+ChemAIRS
+
+**Supporting materials:** none in the Supporting Materials document
+
+*Sources:* Questionnaire cover page, provided by user 2026-09-24
+
+### Describe the product / software / service and its purpose.
+ChemAIRS is an AI-driven retrosynthesis platform: chemists submit a target structure and the system generates and ranks viable synthetic routes, shortening route scouting before lab work is committed. Available as SaaS on AWS or as a local on-premise deployment.
+
+**Supporting materials:** none in the Supporting Materials document
+
+*Sources:* Questionnaire cover page, provided by user 2026-09-24
+
+### Who are the supplier IT & security contacts?
+Jay Huang
+
+**Supporting materials:** none in the Supporting Materials document
+
+*Sources:* Questionnaire cover page, provided by user 2026-09-24
+
+---
+
+## 2. Certifications and assurance
 
 ### Which standards-based certifications do you hold?
 Chemical.AI holds ISO/IEC 27001:2022 (information security management) and ISO 9001 (quality management). The current ISO 27001:2022 certificate was issued on 16 December 2024 and is valid through 21 December 2027; earlier certifications date back to at least 2022.
@@ -75,7 +107,7 @@ No.
 
 ---
 
-## 2. Governance, policies and risk management
+## 3. Governance, policies and risk management
 
 ### Do you have a documented information security program and policy approved by management?
 Yes. We operate an ISO 27001:2022-certified ISMS. The Information Security Management Policy Handbook includes the Password (ISMS-2-CL-001), Backup (CL-002), Privileged Access Management (CL-003), Email (CL-004), Capacity Management (CL-005), Virus Management (CL-006), Secret Authentication Information (CL-007), Clean Desk and Clear Screen (CL-008), Fire Management (CL-009), Personal Information Security (CL-010), Mobile Device Management (CL-011) and Access Control (CL-012) policies. Policy areas also include acceptable use, endpoint protection, network and Wi-Fi security, secure development, vulnerability management, data classification, cryptography, change management, clean desk, business continuity, personnel and physical security, third-party risk, remote access, monitoring and audit logging, and data retention. SaaS operations are governed by the ChemAIRS SaaS Environment Data Security Management Regulations.
@@ -156,7 +188,7 @@ Yes. A documented Pandemic Response Plan is maintained as part of Chemical.AI's 
 
 ---
 
-## 3. People security
+## 4. People security
 
 ### Do you perform background checks and confidentiality agreements?
 Yes. All employees are background-checked before employment; consultants are checked the same way. All employees sign a confidentiality agreement on hire.
@@ -190,7 +222,7 @@ Yes. All developers and development managers are required to take secure develop
 
 ---
 
-## 4. Physical and environmental security
+## 5. Physical and environmental security
 
 ### How is physical access to offices controlled?
 Role-based electronic access cards with default permissions by department. Additional access requires multi-level approval. Sensitive areas (labs, server rooms, executive offices) are segregated, card use is logged, and access is revoked immediately on termination or role change. Visitors wear identification badges, are escorted at all times, and their entry and exit times are logged.
@@ -229,7 +261,7 @@ Chemical.AI maintains a documented Mobile Device Management Policy requiring tha
 
 ---
 
-## 5. Hosting, architecture and data location
+## 6. Hosting, architecture and data location
 
 ### Where is data hosted and stored?
 For SaaS, all customer data is hosted in the United States, in the AWS North California region (us-west-1), with instances replicated across multiple availability zones. For local deployment, all data stays in the customer's own infrastructure, so customers who need data localization can choose local deployment.
@@ -287,7 +319,7 @@ There is no fixed molecule-size limit; the platform supports a wide range of mol
 
 ---
 
-## 6. Data protection and encryption
+## 7. Data protection and encryption
 
 ### How is data encrypted in transit?
 HTTPS with TLS is enforced for all traffic, using TLS 1.2 and TLS 1.3. Database connections also use TLS. Port 80 only redirects to HTTPS. SSL certificates are renewed annually.
@@ -354,7 +386,7 @@ Yes. Data loss prevention covers email and web. Endpoint controls monitor USB/pe
 
 ---
 
-## 7. Data retention, deletion and logs
+## 8. Data retention, deletion and logs
 
 ### How is customer data deleted?
 Your inputs and results exist in two places, production and backups, and each is deleted differently. Usage logs are stored separately with their own retention period.
@@ -401,7 +433,7 @@ Logs follow their own rolling retention, independent of the subscription term: a
 
 ---
 
-## 8. Privacy and GDPR
+## 9. Privacy and GDPR
 
 ### Do you have a Data Protection Officer?
 Yes. An internal Data Protection Officer, Albert Ai (aiy@chemical.ai), sits within the information security organization. The DPO oversees GDPR and other data protection compliance, maintains data protection policies, advises on risks and impact assessments, coordinates data subject requests and personal data breaches, and is the contact point on privacy matters.
@@ -468,7 +500,7 @@ For local deployments, Chemical.AI hosts, stores and backs up no customer data a
 
 ---
 
-## 9. Backup, disaster recovery and business continuity
+## 10. Backup, disaster recovery and business continuity
 
 ### Describe your disaster recovery and business continuity plans.
 ChemAIRS runs on high-availability AWS services with instances in multiple availability zones and load balancing. If the provider's high availability fails, the containerized architecture can be rebuilt quickly in a new cluster from encrypted backups. The documented recovery process covers incident assessment, recovery plan development, dual senior-management authorization, supervised execution and verification, and addresses force majeure, system failures and security incidents. Emergency drills are held twice a year, and a business continuity tabletop exercise is held annually. DR facilities have the same security controls as the primary site.
@@ -500,7 +532,7 @@ The ChemAIRS team emails affected users through our Ops system, and the customer
 
 ---
 
-## 10. Identity, authentication and access control
+## 11. Identity, authentication and access control
 
 ### Do you support single sign-on (SSO)?
 Yes. SSO with Azure AD / Microsoft Entra ID is production-ready (SAML 2.0, OAuth 2.0, OIDC). LDAP-based federated identity is supported; other SSO providers are evaluated case by case. With SSO, the customer's own identity provider can enforce its MFA policy.
@@ -599,7 +631,7 @@ Remote access to our network and cloud services requires VPN, username and passw
 
 ---
 
-## 11. Logging, monitoring and detection
+## 12. Logging, monitoring and detection
 
 ### How are audit logs stored and reviewed?
 Audit logs are kept in a dedicated database accessible only to the audit administrator, as a one-time privilege approved by the CEO. They capture user identity, event type, timestamp, source and destination, data accessed, the operation (read, modify, delete) and the outcome. System and security logs are designed to exclude sensitive molecular data. Customers can request an audit log review through their business director, and logs can be exported or shared on request.
@@ -631,7 +663,7 @@ Yes. Centralized log collection, restricted audit-administrator access, and deta
 
 ---
 
-## 12. Network security
+## 13. Network security
 
 ### Describe your network security controls.
 - HTTPS enforced; only ports 443 and 80 open, with 80 redirecting to HTTPS
@@ -668,7 +700,7 @@ Yes. Unneeded functions are disabled through role permissions, and all container
 
 ---
 
-## 13. Vulnerability and patch management
+## 14. Vulnerability and patch management
 
 ### Describe your vulnerability management program.
 - SonarQube static analysis (SAST) on each commit in GitLab CI, with quality gates that block merges and releases
@@ -705,7 +737,7 @@ Yes. All dependencies and container images are scanned with Trivy before deploym
 
 ---
 
-## 14. Secure development and quality management
+## 15. Secure development and quality management
 
 ### Do you follow secure development standards?
 Yes. Our Security Development Principles and Coding Standards define a secure development lifecycle covering requirements, design, coding, testing and maintenance. We follow OWASP Top 10, OWASP ASVS and CWE. Development is governed by the Design and Development Control Procedure (ZHKJ-QESP-06).
@@ -764,7 +796,7 @@ No. All software is developed in-house.
 
 ---
 
-## 15. Incident management
+## 16. Incident management
 
 ### Do you have an incident response plan?
 Yes. It covers internal and external incidents. A dedicated incident response team (security experts, operations and maintenance staff, development leads) follows a documented process: reporting, categorization, initial assessment, threat isolation and impact mitigation, dual senior-management authorization for recovery, supervised remediation, evidence preservation, root-cause analysis, and corrective and preventive action. Relevant procedures: ZHKJ-QESP-24, -25 and -26. The plan is exercised through emergency drills twice a year, and lessons learned feed into continual improvement (ZHKJ-QESP-14).
@@ -782,7 +814,7 @@ Employees must report security incidents internally within 24 hours. Chemical.AI
 
 ---
 
-## 16. Third parties
+## 17. Third parties
 
 ### Do you use subcontractors or depend on critical third parties?
 No subcontractors and no external developers. For SaaS, AWS is our only infrastructure provider. We evaluate and monitor critical suppliers, particularly cloud providers, under our supplier management procedures. Independent penetration testers are engaged for assessments only. Local deployments involve no third party.
@@ -793,7 +825,7 @@ No subcontractors and no external developers. For SaaS, AWS is our only infrastr
 
 ---
 
-## 17. Local and customer-hosted deployment
+## 18. Local and customer-hosted deployment
 
 ### Can ChemAIRS be deployed locally?
 Yes. ChemAIRS can run as SaaS or be deployed in the customer's own environment (on-premise, or the customer's own cloud account such as AWS). A local deployment can run in an isolated intranet with no internet access after deployment. The customer controls the hardware, application, data, storage location, backups, encryption keys, log retention and update timing.
@@ -825,7 +857,7 @@ Environment preparation, container deployment, configuration, then validation an
 
 ---
 
-## 18. Trials, support and service levels
+## 19. Trials, support and service levels
 
 ### Do you offer trials?
 Yes. Evaluation access or a scoped proof of concept is available before purchase. SaaS trials run in production, the development team has no access to trial data, and single-device login prevents account sharing. As many individual trial accounts as the evaluation needs can be created, within reasonable limits.
@@ -843,7 +875,7 @@ A dedicated business manager plus a support team, escalating to DevOps and devel
 
 ---
 
-## 19. Artificial intelligence
+## 20. Artificial intelligence
 
 ### How does ChemAIRS use AI?
 AI is used only for chemistry: a retrosynthesis engine (reaction-template extraction plus neural ranking) that generates scored synthetic routes, forward-synthesis prediction and synthesizability (SA) scoring, impurity prediction, process chemistry (cost, solvent and reagent assessment, scale-up), and Bayesian optimization of reaction conditions. No generative LLM is used in the core engine.
@@ -868,7 +900,7 @@ Each proposed step can be traced to the literature or patent reaction it derives
 
 ---
 
-## 20. API and client
+## 21. API and client
 
 ### Is an API available and how is it secured?
 Yes, a RESTful JSON API. API access is disabled by default and requires a separate application (and may involve additional licensing). Requests authenticate with an X-Api-Key header or bearer token, and invalid credentials receive HTTP 401. API keys are scoped to specific APIs, rate limits apply per account, all traffic uses HTTPS/TLS, inputs are strictly validated, and API activity is logged.
